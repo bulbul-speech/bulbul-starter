@@ -31,6 +31,23 @@ def score(references, predictions):
     }
 
 
+def load_casablanca(dialect, split="test", data_dir=None, dataset="UBC-NLP/Casablanca", dataset_loader=load_dataset):
+    """Load one dialect from local Parquet shards or the Hugging Face Hub."""
+    if data_dir is not None:
+        folder = Path(data_dir).expanduser() / dialect
+        files = sorted(folder.glob(f"{split}-*.parquet"))
+        if not files:
+            raise FileNotFoundError(f"No {split} Parquet shards found in {folder}")
+        ds = dataset_loader("parquet", data_files={split: [str(f) for f in files]}, split=split)
+    else:
+        ds = dataset_loader(dataset, name=dialect, split=split)
+    required = {"audio", "transcription"}
+    missing = required - set(ds.column_names)
+    if missing:
+        raise ValueError(f"{dialect}: missing columns {sorted(missing)}; available: {ds.column_names}")
+    return ds.cast_column("audio", Audio(decode=False))
+
+
 def evaluate(args, model=None, dataset_loader=load_dataset):
     model = model if model is not None else BulbulASR(args.model_id, args.device)
     dialects = [args.dialect] if args.dialect else list(DIALECTS)
@@ -38,15 +55,11 @@ def evaluate(args, model=None, dataset_loader=load_dataset):
     all_references, all_predictions = [], []
 
     for dialect in dialects:
-        ds = dataset_loader(args.dataset, name=dialect, split=args.split)
-        required = {"audio", "transcription"}
-        missing = required - set(ds.column_names)
-        if missing:
-            raise ValueError(
-                f"{dialect}: missing columns {sorted(missing)}; "
-                f"available: {ds.column_names}"
-            )
-        ds = ds.cast_column("audio", Audio(decode=False))
+        ds = load_casablanca(
+            dialect=dialect, split=args.split,
+            data_dir=getattr(args, "data_dir", None),
+            dataset=args.dataset, dataset_loader=dataset_loader,
+        )
         if args.max_samples is not None:
             ds = ds.select(range(min(len(ds), args.max_samples)))
         refs, hyps = [], []
@@ -64,6 +77,8 @@ def evaluate(args, model=None, dataset_loader=load_dataset):
     result = {
         "model_id": args.model_id,
         "dataset": args.dataset,
+        "source": "local" if getattr(args, "data_dir", None) else "huggingface",
+        "data_dir": str(Path(args.data_dir).expanduser().resolve()) if getattr(args, "data_dir", None) else None,
         "split": args.split,
         "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
         "dialects_evaluated": dialects,
@@ -80,7 +95,8 @@ def evaluate(args, model=None, dataset_loader=load_dataset):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dataset", default="UBC-NLP/Casablanca")
+    p.add_argument("--dataset", default="UBC-NLP/Casablanca", help="Hugging Face dataset ID (default source)")
+    p.add_argument("--data-dir", default=None, help="Local Casablanca root containing Algeria/, Egypt/, etc. with Parquet shards; overrides --dataset")
     p.add_argument("--split", default="test", choices=["test", "validation"])
     p.add_argument("--model-id", default="openai/whisper-tiny")
     p.add_argument("--device", default="cuda")

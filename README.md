@@ -51,6 +51,29 @@ Without `--audio`, the script uses two seconds of silence and validates only the
 
 The Casablanca dataset (`UBC-NLP/Casablanca`) contains **eight dialect configurations** with `validation` and `test` splits. Each configuration has `audio` and `transcription` columns (not `text` or a per-row `dialect` column). The script evaluates each dialect separately using your `BulbulASR` adapter, decodes audio using `Audio(decode=False)`, resamples to 16 kHz, and scores with the **original Bulbul normalization, unchanged**.
 
+### Choose your dataset source
+
+The evaluator supports **both** the Hugging Face dataset (default) and an existing local Parquet download. Both use the same model adapter, audio decoder, original Bulbul normalizer, and scoring logic. The local directory must contain dialect subfolders such as `Algeria/test-00000-of-00002.parquet`.
+
+**Option A — Hugging Face (no `--data-dir`):**
+
+```bash
+python evaluate_casablanca.py --model-id openai/whisper-tiny --device cuda --split test --output casablanca_results.json
+```
+
+**Option B — Local Parquet shards:**
+
+```bash
+python evaluate_casablanca.py \
+  --data-dir /path/to/Casablanca \
+  --model-id openai/whisper-tiny \
+  --device cuda \
+  --split test \
+  --output casablanca_results.json
+```
+
+`--data-dir` overrides `--dataset`. If a local split is missing, evaluation fails rather than silently downloading data. The JSON records whether the source was `local` or `huggingface`. To compare scores, use the same dataset revision and split in both modes.
+
 Run the **full public test evaluation**:
 
 ```bash
