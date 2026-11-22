@@ -49,28 +49,34 @@ Without `--audio`, the script uses two seconds of silence and validates only the
 
 ## Casablanca screening evaluation
 
-The public screening evaluator uses `UBC-NLP/Casablanca`, `Audio(decode=False)`, and the **original Bulbul normalization**, unchanged. Casablanca dataset layouts can differ by configuration/revision: **inspect the actual schema first** and provide the correct split, config, audio, text, and dialect column names.
+The Casablanca dataset (`UBC-NLP/Casablanca`) contains **eight dialect configurations** with `validation` and `test` splits. Each configuration has `audio` and `transcription` columns (not `text` or a per-row `dialect` column). The script evaluates each dialect separately using your `BulbulASR` adapter, decodes audio using `Audio(decode=False)`, resamples to 16 kHz, and scores with the **original Bulbul normalization, unchanged**.
 
-```python
-from datasets import load_dataset
-print(load_dataset("UBC-NLP/Casablanca"))
-```
-
-Example for a dataset layout with `test` split and `audio`, `text`, `dialect` columns:
+Run the **full public test evaluation**:
 
 ```bash
 python evaluate_casablanca.py \
-  --dataset UBC-NLP/Casablanca \
-  --split test \
-  --audio-column audio --text-column text --dialect-column dialect \
   --model-id openai/whisper-tiny \
   --device cuda \
+  --split test \
   --output casablanca_results.json
 ```
 
-If Casablanca is organized as separate dialect configs or lacks a dialect column, the organizer must finalize the official dataset adapter before accepting scores. **Do not treat the example command as a verified official Casablanca protocol.** The `--max-samples` flag is for debugging only and marks output as partial. Never report partial scores as official.
+For a **quick smoke test**, run a single dialect and only a few samples:
 
-Results include corpus-level (micro) WER/CER and per-dialect WER/CER. The macro dialect WER is the unweighted mean of per-dialect WERs. Use the **same** `normalization.py` on both references and predictions. The original normalizer intentionally preserves Arabic punctuation characters such as `؟` in some cases; do not alter it.
+```bash
+python evaluate_casablanca.py \
+  --model-id openai/whisper-tiny \
+  --device cuda \
+  --dialect Algeria \
+  --max-samples 5 \
+  --output casablanca_smoke.json
+```
+
+The output contains per-dialect WER/CER, overall corpus-level (micro) WER/CER, and macro-averaged dialect WER/CER, all as percentages. A restricted run is flagged `partial_evaluation: true` and **must not** be reported as a full benchmark score. Authors should disclose whether Casablanca was used in training or tuning. Dataset and model revisions should be recorded for reproducibility; the script does not yet pin them automatically.
+
+The original `normalization.py` intentionally retains some Arabic-block punctuation such as `؟`. Do not modify the normalizer to improve scores.
+
+**Status:** Dataset schema was checked against the public Hugging Face viewer. Synthetic integration test included; running it requires the listed dependencies. Actual full Whisper inference over Casablanca has not been executed in this starter's build environment.
 
 ## Security and fairness
 
